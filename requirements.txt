@@ -3,3 +3,8 @@ tensorflow
 numpy
 opencv-python-headless
 pillow
+yolo
+opencv-python 
+pillow 
+numpy
+ultralytics

@@ -1,75 +1,98 @@
 import cv2
 import numpy as np
 from PIL import Image
-import tensorflow as tf
+from ultralytics import YOLO
 import os
 
-@tf.keras.utils.register_keras_serializable()
-def load_model(model_path):
+
+def load_model(model_path="Yolov8-fintuned-on-potholes.pt"):
     """
-    Loads the trained Keras model from the given path.
+    Load YOLOv8 pothole detection model from local file
     """
+
     if not os.path.exists(model_path):
+        print("Model file not found:", model_path)
         return None
+
     try:
-        model = tf.keras.models.load_model(model_path)
+        model = YOLO(model_path)
         return model
     except Exception as e:
-        print(f"Error loading model: {e}")
+        print(f"Error loading YOLO model: {e}")
         return None
 
-def preprocess_image(image, target_size=(128, 128)):
+
+def preprocess_image(image):
     """
-    Preprocesses the PIL Image to match the expected model input shape.
-    Converts to numpy array, resizes, normalizes, and expands dimensions.
+    Convert PIL Image to numpy format
     """
 
-    # Convert PIL image to numpy array
     img_array = np.array(image)
 
-    # Handle image channels
     if img_array.shape[-1] == 4:  # RGBA → RGB
         img_array = cv2.cvtColor(img_array, cv2.COLOR_RGBA2RGB)
 
     elif len(img_array.shape) == 2:  # Grayscale → RGB
         img_array = cv2.cvtColor(img_array, cv2.COLOR_GRAY2RGB)
 
-    # Resize image to model input size
-    img_resized = cv2.resize(img_array, target_size)
+    return img_array
 
-    # Normalize pixel values
-    img_normalized = img_resized.astype("float32") / 255.0
 
-    # Add batch dimension
-    img_batch = np.expand_dims(img_normalized, axis=0)
-
-    return img_batch
-
-def predict_pothole(model, image_batch):
+def predict_pothole(model, image_array, conf_threshold=0.5):
     """
-    Runs the model prediction on the processed image batch.
-    Returns the probability of the image being a pothole.
-    Assuming binary classification where higher probability -> Pothole.
+    Run YOLO pothole detection
     """
-    prediction = model.predict(image_batch)
-    
-    # Check model output shape to handle different binary classification styles
-    if len(prediction[0]) > 1:
-        # One-hot encoded output, e.g., [Normal_Prob, Pothole_Prob]
-        prob = float(prediction[0][1])
-    else:
-        # Single sigmoid output
-        prob = float(prediction[0][0])
-        
-    return prob
+
+    results = model(image_array, conf=conf_threshold)
+
+    detections = []
+
+    for result in results:
+        if result.boxes is not None:
+            for box in result.boxes:
+
+                confidence = float(box.conf[0])
+                bbox = box.xyxy[0].tolist()
+
+                detections.append({
+                    "confidence": confidence,
+                    "bbox": bbox,
+                    "severity": get_severity(confidence)
+                })
+
+    return detections
+
 
 def get_severity(confidence):
-    """
-    Determines pothole severity based on the model's confidence.
-    """
+
     if confidence < 0.65:
         return "Low"
     elif confidence < 0.85:
         return "Medium"
     else:
         return "Severe"
+
+
+def draw_detections(image_array, detections):
+
+    for det in detections:
+
+        x1, y1, x2, y2 = map(int, det["bbox"])
+        conf = det["confidence"]
+        severity = det["severity"]
+
+        label = f"Pothole {conf:.2f} ({severity})"
+
+        cv2.rectangle(image_array, (x1, y1), (x2, y2), (0, 0, 255), 2)
+
+        cv2.putText(
+            image_array,
+            label,
+            (x1, y1 - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 0, 255),
+            2
+        )
+
+    return image_array
