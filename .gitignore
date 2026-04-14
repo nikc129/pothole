@@ -45,8 +45,7 @@ Thumbs.db
 # Dataset (very important)
 # ----------------------
 dataset/
-true/
-false/
+
 
 # ----------------------
 # Streamlit cache
